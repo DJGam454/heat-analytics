@@ -29,7 +29,9 @@ This tool is a small, practical adaptation to a hotter world: it converts a sing
 
 ## Screenshot (metrics view)
 
-![Core, time and cardiovascular metrics](docs/screenshot-dashboard-viewport.png)
+![Hydration, fueling and cardiovascular analytics](docs/screenshot-dashboard-hydration.png)
+
+The dashboard below the core metrics: HR drift, aerobic decoupling, sweat loss, sweat rate, body mass loss, and fluid, carb and sodium intake rates.
 
 ## Metrics and formulas
 
