@@ -92,8 +92,7 @@ $$\sigma_{HR} = \sqrt{\frac{1}{N-1} \sum_{i=1}^{N} \left( HR_i - \overline{HR} \
 
 **Drift onset** - first time at which the 30-sample rolling mean of heart rate exceeds the baseline by 5%, reported in minutes from the start:
 
-$$\mu_{30}(k) = \frac{1}{30} \sum_{j = k-29}^{k} HR_j, \qquad
-t_{\text{onset}} = \min\left\{ k \;:\; \mu_{30}(k) > 1.05 \cdot \mu_{30}(1) \right\}$$
+$$\mu_{30}(k) = \frac{1}{30} \sum_{j = k-29}^{k} HR_j, \qquad t_{\text{onset}} = \min\left\{ k : \mu_{30}(k) > 1.05 \cdot \mu_{30}(1) \right\}$$
 
 ### Hydration metrics (the core of the app)
 
