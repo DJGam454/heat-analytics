@@ -35,43 +35,93 @@ The dashboard below the core metrics: HR drift, aerobic decoupling, sweat loss, 
 
 ## Metrics and formulas
 
-All formulas live in `analytics/metrics.py` and are unit-tested against real GPX data.
+All formulas below are implemented in `analytics/metrics.py` and validated against real GPX data.
+
+### Notation
+
+| Symbol | Definition |
+|---|---|
+| $p_i = (\varphi_i, \lambda_i)$ | GPS fix at sample $i$ (latitude, longitude) |
+| $t_i$ | Timestamp of sample $i$ [s] |
+| $\Delta t_i = t_i - t_{i-1}$ | Inter-sample time interval [s] |
+| $v_i$ | Ground speed at sample $i$ [km/h] |
+| $HR_i$ | Heart rate at sample $i$ [bpm] |
+| $n$ | Number of GPS samples |
+| $W_{\text{pre}}, W_{\text{post}}$ | Body mass before and after the run [kg] |
+| $V_{\text{fluid}}, V_{\text{urine}}$ | Fluid consumed, urine output during the run [L] |
+| $c_{\text{carb}}, m_{\text{Na}}$ | Carbohydrate [g] and sodium [mg] consumed |
 
 ### Core run metrics
 
-| Metric | Formula | Notes |
-|---|---|---|
-| Distance | Sum of `geodesic(lat,lon)` between consecutive GPS points | WGS84 ellipsoid distance via `geopy`, reported in km |
-| Elapsed time | `last_timestamp - first_timestamp` | Wall-clock duration |
-| Moving time | Sum of `time_diff` where speed > 1 km/h | Points below 1 km/h count as stationary |
-| Pace | `moving_time / distance` | Reported as `mm:ss /km` |
+**Elapsed time** - wall-clock duration from first to last fix:
+
+$$T_{\text{elapsed}} = t_n - t_1$$
+
+**Moving time** - time spent above the movement threshold $v_{\text{thr}} = 1$ km/h, using the indicator function $\mathbb{1}[\cdot]$:
+
+$$T_{\text{moving}} = \sum_{i=2}^{n} \Delta t_i \cdot \mathbf{1}\big[v_i > v_{\text{thr}}\big]$$
+
+**Distance** - cumulative geodesic distance over consecutive fixes, computed on the WGS84 reference ellipsoid (via `geopy` `geodesic`):
+
+$$D = \sum_{i=2}^{n} d_g(p_{i-1},\, p_i)$$
+
+**Pace** - moving time normalised by distance:
+
+$$P = \frac{T_{\text{moving}}}{D} \quad \left[\frac{\text{min}}{\text{km}}\right]$$
 
 ### Cardiovascular metrics
 
-| Metric | Formula | What it reveals |
-|---|---|---|
-| Average HR | Mean of all heart-rate samples | Overall effort |
-| Max HR | Max of all heart-rate samples | Peak intensity |
-| HR drift | `(avg_HR_2nd_half - avg_HR_1st_half) / avg_HR_1st_half * 100` | Cardiac drift. Above ~10% indicates heat strain or dehydration |
-| Aerobic decoupling | `(pace_efficiency_2nd_half - pace_efficiency_1st_half) / pace_efficiency_1st_half * 100`, where `pace_efficiency = (time / distance) / avg_HR` | "Fitness-metabolism" coupling; low values mean a stable, efficient run |
-| HR stability | Standard deviation of heart rate | Low = steady effort, high = surges/heat impact |
-| Drift onset | First minute where the 30-sample rolling HR mean exceeds the baseline by 5% | When the heat started to take its toll |
+Mean and peak heart rate over the $N$ samples with valid readings:
+
+$$\overline{HR} = \frac{1}{N} \sum_{i=1}^{N} HR_i, \qquad HR_{\max} = \max_{i} HR_i$$
+
+All drift metrics split the run into two halves at the sample midpoint $m = \lfloor n/2 \rfloor$, with $\mathcal{H}_1 = \{1,\dots,m\}$ and $\mathcal{H}_2 = \{m+1,\dots,n\}$.
+
+**Heart-rate drift** - relative change in mean heart rate between the two halves. Values above ~10% are classically associated with heat strain, dehydration, and cardiac drift:
+
+$$\mathrm{HRD} = \frac{\overline{HR}_{\mathcal{H}_2} - \overline{HR}_{\mathcal{H}_1}}{\overline{HR}_{\mathcal{H}_1}} \times 100\%$$
+
+**Aerobic decoupling** - drift in pace efficiency $E$ (time per unit distance per unit heart rate), i.e. whether the run becomes metabolically less efficient over time:
+
+$$E = \frac{T_{\text{moving}} / D}{\overline{HR}}, \qquad
+\mathrm{AD} = \left| \frac{E_{\mathcal{H}_2} - E_{\mathcal{H}_1}}{E_{\mathcal{H}_1}} \right| \times 100\%$$
+
+**HR stability** - sample standard deviation of heart rate; low values indicate a steady, well-managed effort:
+
+$$\sigma_{HR} = \sqrt{\frac{1}{N-1} \sum_{i=1}^{N} \left( HR_i - \overline{HR} \right)^2}$$
+
+**Drift onset** - first time at which the 30-sample rolling mean of heart rate exceeds the baseline by 5%, reported in minutes from the start:
+
+$$\mu_{30}(k) = \frac{1}{30} \sum_{j = k-29}^{k} HR_j, \qquad
+t_{\text{onset}} = \min\left\{ k \;:\; \mu_{30}(k) > 1.05 \cdot \mu_{30}(1) \right\}$$
 
 ### Hydration metrics (the core of the app)
 
-| Metric | Formula | Notes |
-|---|---|---|
-| **Sweat loss** | `(pre_weight - post_weight) + fluid_consumed - urine_output` | Litres of sweat lost during the run |
-| **Sweat rate** | `sweat_loss / moving_time_hours` | L/hr. The number hydration plans are built around |
-| Body mass loss % | `(pre_weight - post_weight) / pre_weight * 100` | Above ~2% is where performance drops |
-| Fluid intake rate | `fluid_consumed / moving_time_hours` | L/hr actually replaced |
-| Carb intake rate | `carbs_consumed / moving_time_hours` | g/hr. Reference range ~30-60 g/hr for endurance |
-| Sodium intake rate | `sodium_consumed / moving_time_hours` | mg/hr. Guards against hyponatremia |
+**Sweat loss** - whole-body mass balance: pre-run body mass plus what was taken in, minus what was excreted:
+
+$$V_{\text{sweat}} = \left( W_{\text{pre}} - W_{\text{post}} \right) + V_{\text{fluid}} - V_{\text{urine}}$$
+
+**Sweat rate** - sweat loss normalised by moving time (the figure hydration plans are built around):
+
+$$\dot{V}_{\text{sweat}} = \frac{V_{\text{sweat}}}{T_{\text{moving}}} \quad \left[\frac{\text{L}}{\text{hr}}\right]$$
+
+**Body mass loss percentage** - relative dehydration. Losing more than ~2% measurably impairs endurance performance (ACSM guidance):
+
+$$\%\mathrm{BML} = \frac{W_{\text{pre}} - W_{\text{post}}}{W_{\text{pre}}} \times 100\%$$
+
+**Fueling rates** - intake normalised by moving time, compared against the ~30-60 g/hr carbohydrate reference range for endurance events:
+
+$$\dot{V}_{\text{fluid}} = \frac{V_{\text{fluid}}}{T_{\text{moving}}}, \qquad
+\dot{c}_{\text{carb}} = \frac{c_{\text{carb}}}{T_{\text{moving}}}, \qquad
+\dot{m}_{\text{Na}} = \frac{m_{\text{Na}}}{T_{\text{moving}}}$$
 
 ### Environmental metrics
 
-Temperature, humidity, wind and feels-like for the start and end of the run, averaged:
-`(start_value + end_value) / 2`. Weather comes from the [WeatherAPI](https://www.weatherapi.com) history endpoint, using the run's start latitude/longitude, date and start hour.
+Weather is fetched for the start and end hours of the run; each environmental variable $x$ is reported as the mean of the two observations, $x \in \{T, T_{\text{feels-like}}, \mathrm{RH}, v_{\text{wind}}\}$:
+
+$$\bar{x} = \frac{x_{\text{start}} + x_{\text{end}}}{2}$$
+
+Weather comes from the [WeatherAPI](https://www.weatherapi.com) history endpoint, using the run's start latitude/longitude, date and start hour.
 
 ## Project structure
 
